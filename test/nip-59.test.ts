@@ -409,39 +409,38 @@ describe("relay integration - NIP-59", () => {
     ws.close()
   })
 
-  test("older gift wrap with same d-tag is rejected", async () => {
+  test("latest arrival replaces regardless of created_at (gift wrap timestamps are randomized)", async () => {
     const ws = await connectAuthed(recipientSk)
-    const dTag = "note-reject-old"
+    const dTag = "note-latest-wins"
 
     const now = Math.floor(Date.now() / 1000)
-    // Publish newer first
+    // Publish with a future timestamp first
     const gw1 = sign(generateSecretKey(), {
       kind: KIND_GIFT_WRAP,
-      content: "newer",
+      content: "first-arrival",
       tags: [["p", recipientPubkey], ["d", dTag]],
       created_at: now + 10,
     })
     ws.send(JSON.stringify(["EVENT", gw1]))
     await waitForMessage(ws)
 
-    // Try to publish older — relay accepts as duplicate (OK true) but doesn't store
+    // Publish with an older timestamp — should still replace (latest arrival wins)
     const gw2 = sign(generateSecretKey(), {
       kind: KIND_GIFT_WRAP,
-      content: "older",
+      content: "second-arrival",
       tags: [["p", recipientPubkey], ["d", dTag]],
       created_at: now,
     })
     ws.send(JSON.stringify(["EVENT", gw2]))
     const ok = await waitForMessage(ws)
-    // Duplicates return OK true per NIP-01, but the old version is not stored
     expect(ok[2]).toBe(true)
 
-    // Verify only the newer one exists
-    ws.send(JSON.stringify(["REQ", "onlynew", { kinds: [KIND_GIFT_WRAP], "#p": [recipientPubkey], "#d": [dTag] }]))
+    // The second arrival should be the one stored
+    ws.send(JSON.stringify(["REQ", "latest", { kinds: [KIND_GIFT_WRAP], "#p": [recipientPubkey], "#d": [dTag] }]))
     const msgs = await waitForMessages(ws, 2)
     const events = msgs.filter((m) => m[0] === "EVENT")
     expect(events).toHaveLength(1)
-    expect((events[0][2] as any).content).toBe("newer")
+    expect((events[0][2] as any).content).toBe("second-arrival")
 
     ws.close()
   })

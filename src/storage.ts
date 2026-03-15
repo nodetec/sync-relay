@@ -255,17 +255,21 @@ export function initStorage(dbPath: string): Storage {
       const dTag = event.tags.find(([t]) => t === "d")?.[1]
 
       if (pTag && dTag) {
-        const existing = selectGiftWrapByPD.get(pTag, dTag) as
-          | { id: string; created_at: number }
-          | undefined
-        if (existing && existing.created_at >= event.created_at) {
-          return { saved: false, reason: "duplicate: a newer replaceable gift wrap exists", changes: [] }
-        }
+        // Always replace — gift wraps use randomized created_at (NIP-59 timestamp tweaking)
+        // so we can't compare timestamps. Latest arrival wins.
         const changes: ChangeEntry[] = []
         const doReplace = db.transaction(() => {
-          const oldEvents = selectGiftWrapIdsByPD.all(pTag, dTag, event.created_at) as
-            Array<{ id: string; kind: number; pubkey: string; tags: string }>
-          deleteGiftWrapByPD.run(pTag, dTag, event.created_at)
+          // Find and remove all existing gift wraps with the same p+d
+          const oldEvents = db.prepare(
+            "SELECT e.id, e.kind, e.pubkey, e.tags FROM events e " +
+            "JOIN event_tags tp ON e.id = tp.event_id AND tp.tag_name = 'p' AND tp.tag_value = ? " +
+            "JOIN event_tags td ON e.id = td.event_id AND td.tag_name = 'd' AND td.tag_value = ? " +
+            "WHERE e.kind = 1059"
+          ).all(pTag, dTag) as Array<{ id: string; kind: number; pubkey: string; tags: string }>
+
+          for (const old of oldEvents) {
+            deleteById.run(old.id)
+          }
           insertEventWithTags(event)
           for (const old of oldEvents) {
             const oldTags = extractSingleLetterTags(JSON.parse(old.tags))
