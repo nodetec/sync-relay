@@ -4,7 +4,6 @@ import { Plus, Trash2, Shield, Pencil } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +39,7 @@ import {
   setStorageLimit,
   type AllowedPubkey,
 } from "@/lib/api"
+import { formatBytes, usagePercent, usageColor } from "@/lib/utils"
 
 /** Resolve an npub or hex string to a hex pubkey, or null if invalid. */
 function resolveToHex(input: string): string | null {
@@ -54,24 +54,6 @@ function resolveToHex(input: string): string | null {
     }
   }
   return null
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B"
-  const units = ["B", "KB", "MB", "GB", "TB"]
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
-}
-
-function usagePercent(used: number, limit: number): number {
-  if (limit === 0) return 0
-  return Math.min(100, Math.round((used / limit) * 100))
-}
-
-function usageColor(pct: number): string {
-  if (pct >= 95) return "bg-destructive"
-  if (pct >= 80) return "bg-yellow-500"
-  return "bg-primary"
 }
 
 function StorageLimitEditor({
@@ -171,7 +153,7 @@ export function AllowlistPage() {
   const queryClient = useQueryClient()
   const [newPubkey, setNewPubkey] = useState("")
 
-  const { data, isLoading } = useQuery({
+  const { data } = useQuery({
     queryKey: ["allowlist"],
     queryFn: fetchAllowlist,
   })
@@ -253,13 +235,7 @@ export function AllowlistPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : !data?.pubkeys.length ? (
+          {!data?.pubkeys.length ? (
             <p className="py-4 text-center text-sm text-muted-foreground">
               No pubkeys on the allowlist.
             </p>

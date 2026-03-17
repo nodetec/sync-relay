@@ -47,16 +47,23 @@ export function initStorage(db: DB): Storage {
       tags: tags.length > 0 ? tags : null,
     }).returning({ seq: changes.seq })
 
-    for (const [name, value] of tags) {
-      await tx.insert(changeTags).values({ seq: row.seq, tagName: name, tagValue: value })
+    if (tags.length > 0) {
+      await tx.insert(changeTags).values(tags.map(([name, value]) => ({ seq: row.seq, tagName: name, tagValue: value })))
     }
     return { seq: row.seq, eventId, type, kind, pubkey, reason: reason as ChangeEntry["reason"], tags }
   }
 
   async function insertEventWithTags(tx: DB, event: NostrEvent): Promise<void> {
+    const recipient = isGiftWrap(event)
+      ? event.tags.find(([t]) => t === "p")?.[1] ?? null
+      : null
+    const dTagValue = event.tags.find(([t]) => t === "d")?.[1] ?? null
+
     await tx.insert(events).values({
       id: event.id,
       pubkey: event.pubkey,
+      recipient,
+      dTag: dTagValue,
       createdAt: event.created_at,
       kind: event.kind,
       tags: event.tags,
@@ -64,10 +71,11 @@ export function initStorage(db: DB): Storage {
       sig: event.sig,
     }).onConflictDoNothing()
 
-    for (const tag of event.tags) {
-      if (tag.length >= 2 && tag[0].length === 1) {
-        await tx.insert(eventTags).values({ eventId: event.id, tagName: tag[0], tagValue: tag[1] })
-      }
+    const tagRows = event.tags
+      .filter((tag) => tag.length >= 2 && tag[0].length === 1)
+      .map((tag) => ({ eventId: event.id, tagName: tag[0], tagValue: tag[1] }))
+    if (tagRows.length > 0) {
+      await tx.insert(eventTags).values(tagRows)
     }
   }
 
@@ -90,19 +98,15 @@ export function initStorage(db: DB): Storage {
       if (pTag && dTag) {
         const allChanges: ChangeEntry[] = []
         await db.transaction(async (tx) => {
-          // Find old gift wraps with same p+d
+          // Find old gift wraps with same recipient+d_tag
           const oldEvents = await tx
             .select({ id: events.id })
             .from(events)
-            .innerJoin(
-              sql`event_tags tp`,
-              sql`${events.id} = tp.event_id AND tp.tag_name = 'p' AND tp.tag_value = ${pTag}`
-            )
-            .innerJoin(
-              sql`event_tags td`,
-              sql`${events.id} = td.event_id AND td.tag_name = 'd' AND td.tag_value = ${dTag}`
-            )
-            .where(eq(events.kind, 1059))
+            .where(and(
+              eq(events.kind, KIND_GIFT_WRAP),
+              eq(events.recipient, pTag),
+              eq(events.dTag, dTag),
+            ))
 
           for (const old of oldEvents) {
             await tx.delete(events).where(eq(events.id, old.id))
@@ -166,12 +170,10 @@ export function initStorage(db: DB): Storage {
       const [existing] = await db
         .select({ createdAt: events.createdAt })
         .from(events)
-        .innerJoin(eventTags, eq(events.id, eventTags.eventId))
         .where(and(
           eq(events.pubkey, event.pubkey),
           eq(events.kind, event.kind),
-          eq(eventTags.tagName, "d"),
-          eq(eventTags.tagValue, dTag),
+          eq(events.dTag, dTag),
         ))
         .orderBy(desc(events.createdAt))
         .limit(1)
@@ -185,12 +187,10 @@ export function initStorage(db: DB): Storage {
         const oldEvents = await tx
           .select({ id: events.id, kind: events.kind, pubkey: events.pubkey, tags: events.tags })
           .from(events)
-          .innerJoin(eventTags, eq(events.id, eventTags.eventId))
           .where(and(
             eq(events.pubkey, event.pubkey),
             eq(events.kind, event.kind),
-            eq(eventTags.tagName, "d"),
-            eq(eventTags.tagValue, dTag),
+            eq(events.dTag, dTag),
             lt(events.createdAt, event.created_at),
           ))
 
@@ -354,12 +354,10 @@ export function initStorage(db: DB): Storage {
         const affected = await tx
           .select({ id: events.id, kind: events.kind, pubkey: events.pubkey, tags: events.tags })
           .from(events)
-          .innerJoin(eventTags, eq(events.id, eventTags.eventId))
           .where(and(
             eq(events.pubkey, addr.pubkey),
             eq(events.kind, addr.kind),
-            eq(eventTags.tagName, "d"),
-            eq(eventTags.tagValue, addr.dTag),
+            eq(events.dTag, addr.dTag),
             lte(events.createdAt, event.created_at),
           ))
 

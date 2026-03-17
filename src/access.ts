@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import type { DB } from "./db"
 import { users, inviteCodes } from "./schema"
 
@@ -75,29 +75,31 @@ export async function initAccessControl(db: DB, privateMode: boolean): Promise<A
       return { ok: false, error: "pubkey already registered" }
     }
 
-    // Find and validate invite code
-    const [invite] = await db.select().from(inviteCodes).where(eq(inviteCodes.code, code))
-    if (!invite) {
-      return { ok: false, error: "invalid invite code" }
-    }
-    if (invite.revoked) {
-      return { ok: false, error: "invite code has been revoked" }
-    }
-    if (invite.useCount >= invite.maxUses) {
-      return { ok: false, error: "invite code has been fully used" }
-    }
-    const now = Math.floor(Date.now() / 1000)
-    if (invite.expiresAt && invite.expiresAt < now) {
-      return { ok: false, error: "invite code has expired" }
-    }
-
-    // Atomically increment use count and create user
-    await db.transaction(async (tx) => {
-      await tx.update(inviteCodes)
+    // Atomically validate, increment use count, and create user
+    const result = await db.transaction(async (tx) => {
+      // Conditionally increment use_count only if the code is still valid
+      const now = Math.floor(Date.now() / 1000)
+      const [updated] = await tx.update(inviteCodes)
         .set({ useCount: sql`${inviteCodes.useCount} + 1` })
-        .where(eq(inviteCodes.id, invite.id))
-      await tx.insert(users).values({ pubkey, inviteCodeId: invite.id })
+        .where(and(
+          eq(inviteCodes.code, code),
+          eq(inviteCodes.revoked, false),
+          sql`${inviteCodes.useCount} < ${inviteCodes.maxUses}`,
+          sql`(${inviteCodes.expiresAt} IS NULL OR ${inviteCodes.expiresAt} > ${now})`,
+        ))
+        .returning({ id: inviteCodes.id })
+
+      if (!updated) {
+        return { ok: false as const, error: "invalid or expired invite code" }
+      }
+
+      await tx.insert(users).values({ pubkey, inviteCodeId: updated.id })
+      return { ok: true as const, id: updated.id }
     })
+
+    if (!result.ok) {
+      return { ok: false, error: result.error }
+    }
 
     allowedSet.set(pubkey, null)
     return { ok: true }

@@ -8,7 +8,7 @@ export type BlobRecord = {
   sha256: string
   size: number
   type: string | null
-  uploaded_at: string
+  uploaded_at: number
 }
 
 export async function insertBlob(db: DB, sha256: string, size: number, type: string | null, pubkey: string): Promise<void> {
@@ -22,7 +22,7 @@ export async function getBlob(db: DB, sha256: string): Promise<BlobRecord | null
     .from(blobs)
     .where(eq(blobs.sha256, sha256))
   if (!row) return null
-  return { sha256: row.sha256, size: row.size, type: row.type, uploaded_at: row.uploadedAt.toISOString() }
+  return { sha256: row.sha256, size: row.size, type: row.type, uploaded_at: row.uploadedAt }
 }
 
 export async function listBlobsByPubkey(db: DB, pubkey: string): Promise<BlobRecord[]> {
@@ -32,7 +32,7 @@ export async function listBlobsByPubkey(db: DB, pubkey: string): Promise<BlobRec
     .innerJoin(blobOwners, eq(blobs.sha256, blobOwners.sha256))
     .where(eq(blobOwners.pubkey, pubkey))
     .orderBy(desc(blobs.uploadedAt))
-  return rows.map((r) => ({ sha256: r.sha256, size: r.size, type: r.type, uploaded_at: r.uploadedAt.toISOString() }))
+  return rows.map((r) => ({ sha256: r.sha256, size: r.size, type: r.type, uploaded_at: r.uploadedAt }))
 }
 
 export async function removeOwner(db: DB, sha256: string, pubkey: string): Promise<boolean> {

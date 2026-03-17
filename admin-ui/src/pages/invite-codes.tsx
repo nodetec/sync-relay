@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,7 +64,7 @@ export function InviteCodesPage() {
   const [maxUses, setMaxUses] = useState("1")
   const [newCode, setNewCode] = useState<string | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data } = useQuery({
     queryKey: ["invite-codes"],
     queryFn: fetchInviteCodes,
   })
@@ -144,13 +143,7 @@ export function InviteCodesPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : !data?.invite_codes.length ? (
+          {!data?.invite_codes.length ? (
             <p className="py-4 text-center text-sm text-muted-foreground">
               No invite codes created yet.
             </p>

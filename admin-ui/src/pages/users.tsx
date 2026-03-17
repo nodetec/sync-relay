@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query"
 import { Users } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -12,27 +11,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { fetchUsers } from "@/lib/api"
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B"
-  const units = ["B", "KB", "MB", "GB", "TB"]
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
-}
-
-function usagePercent(used: number, limit: number): number {
-  if (limit === 0) return 0
-  return Math.min(100, Math.round((used / limit) * 100))
-}
-
-function usageColor(pct: number): string {
-  if (pct >= 95) return "bg-destructive"
-  if (pct >= 80) return "bg-yellow-500"
-  return "bg-primary"
-}
+import { formatBytes, usagePercent, usageColor } from "@/lib/utils"
 
 export function UsersPage() {
-  const { data, isLoading } = useQuery({
+  const { data } = useQuery({
     queryKey: ["users"],
     queryFn: fetchUsers,
     refetchInterval: 10000,
@@ -62,13 +44,7 @@ export function UsersPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : !data?.users.length ? (
+          {!data?.users.length ? (
             <p className="py-4 text-center text-sm text-muted-foreground">
               No users found.
             </p>

@@ -4,16 +4,18 @@ import { sql } from "drizzle-orm"
 export const events = pgTable("events", {
   id: text("id").primaryKey(),
   pubkey: text("pubkey").notNull(),
+  recipient: text("recipient"),
+  dTag: text("d_tag"),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
   kind: integer("kind").notNull(),
   tags: jsonb("tags").notNull().$type<string[][]>(),
   content: text("content").notNull(),
   sig: text("sig").notNull(),
 }, (t) => [
-  index("idx_events_pubkey").on(t.pubkey),
   index("idx_events_kind").on(t.kind),
   index("idx_events_created_at").on(t.createdAt),
-  index("idx_events_pubkey_kind").on(t.pubkey, t.kind),
+  index("idx_events_recipient").on(t.recipient),
+  index("idx_events_pubkey_kind_dtag").on(t.pubkey, t.kind, t.dTag),
 ])
 
 export const eventTags = pgTable("event_tags", {
@@ -21,6 +23,7 @@ export const eventTags = pgTable("event_tags", {
   tagName: text("tag_name").notNull(),
   tagValue: text("tag_value").notNull(),
 }, (t) => [
+  index("idx_event_tags_event_id").on(t.eventId),
   index("idx_tags_lookup").on(t.tagName, t.tagValue),
 ])
 
@@ -58,6 +61,7 @@ export const changeTags = pgTable("change_tags", {
   tagName: text("tag_name").notNull(),
   tagValue: text("tag_value").notNull(),
 }, (t) => [
+  index("idx_change_tags_seq").on(t.seq),
   index("idx_change_tags_lookup").on(t.tagName, t.tagValue),
 ])
 
@@ -73,7 +77,7 @@ export const inviteCodes = pgTable("invite_codes", {
 
 export const users = pgTable("users", {
   pubkey: text("pubkey").primaryKey(),
-  inviteCodeId: integer("invite_code_id").references(() => inviteCodes.id),
+  inviteCodeId: integer("invite_code_id").references(() => inviteCodes.id, { onDelete: "set null" }),
   storageLimitBytes: bigint("storage_limit_bytes", { mode: "number" }),
   expiresAt: bigint("expires_at", { mode: "number" }),
   createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`(EXTRACT(EPOCH FROM NOW())::BIGINT)`),
@@ -83,13 +87,14 @@ export const blobs = pgTable("blobs", {
   sha256: text("sha256").primaryKey(),
   size: bigint("size", { mode: "number" }).notNull(),
   type: text("type"),
-  uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
+  uploadedAt: bigint("uploaded_at", { mode: "number" }).notNull().default(sql`(EXTRACT(EPOCH FROM NOW())::BIGINT)`),
 })
 
 export const blobOwners = pgTable("blob_owners", {
   sha256: text("sha256").notNull().references(() => blobs.sha256, { onDelete: "cascade" }),
   pubkey: text("pubkey").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`(EXTRACT(EPOCH FROM NOW())::BIGINT)`),
 }, (t) => [
   primaryKey({ columns: [t.sha256, t.pubkey] }),
+  index("idx_blob_owners_pubkey").on(t.pubkey),
 ])

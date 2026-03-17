@@ -86,12 +86,15 @@ export type BlobEntry = {
   sha256: string
   size: number
   type: string | null
-  uploaded_at: string
+  uploaded_at: number
   owners: string[]
 }
 
-export function fetchBlobs() {
-  return request<{ blobs: BlobEntry[] }>("/blobs")
+export type BlobsPage = { blobs: BlobEntry[]; next_cursor: string | null }
+
+export function fetchBlobs(cursor?: string) {
+  const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""
+  return request<BlobsPage>(`/blobs${qs}`)
 }
 
 export function deleteBlob(sha256: string) {
@@ -109,12 +112,15 @@ export type EventEntry = {
   content: string
 }
 
-export function fetchEvents(params?: { kind?: number; pubkey?: string }) {
+export type EventsPage = { events: EventEntry[]; next_cursor: string | null }
+
+export function fetchEvents(params?: { kind?: number; pubkey?: string; cursor?: string }) {
   const search = new URLSearchParams()
   if (params?.kind !== undefined) search.set("kind", String(params.kind))
   if (params?.pubkey) search.set("pubkey", params.pubkey)
+  if (params?.cursor) search.set("cursor", params.cursor)
   const qs = search.toString()
-  return request<{ events: EventEntry[] }>(`/events${qs ? `?${qs}` : ""}`)
+  return request<EventsPage>(`/events${qs ? `?${qs}` : ""}`)
 }
 
 // Invite Codes

@@ -4,6 +4,20 @@ import { validateBlossomAuth } from "./auth"
 import * as blobDb from "./db"
 import * as s3 from "./s3"
 
+const MIME_TO_EXT: Record<string, string> = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/gif": ".gif",
+  "image/webp": ".webp",
+  "image/svg+xml": ".svg",
+  "application/pdf": ".pdf",
+  "text/plain": ".txt",
+}
+
+function mimeToExt(contentType: string): string {
+  return MIME_TO_EXT[contentType] ?? ".bin"
+}
+
 /** Extract the 64-char hex sha256 from a path param that may have a file extension (e.g. "abc123.png"). */
 function parseSha256(param: string): string | null {
   const sha256 = param.replace(/\.[^.]+$/, "")
@@ -22,12 +36,17 @@ export function blossomRoutes(db: DB): Hono {
       console.log(`[BLOSSOM] GET ${sha256.slice(0, 8)}… not found`)
       return c.json({ error: "not found" }, 404)
     }
-    console.log(`[BLOSSOM] GET ${sha256.slice(0, 8)}… → ${obj.data.byteLength} bytes`)
-    return c.body(obj.data as Uint8Array<ArrayBuffer>, 200, {
+    const headers: Record<string, string> = {
       "Content-Type": obj.contentType,
       "Content-Length": String(obj.data.byteLength),
       "Cache-Control": "public, max-age=31536000, immutable",
-    })
+    }
+    if (obj.contentType !== "application/octet-stream") {
+      const ext = mimeToExt(obj.contentType)
+      headers["Content-Disposition"] = `inline; filename="${sha256.slice(0, 12)}${ext}"`
+    }
+    console.log(`[BLOSSOM] GET ${sha256.slice(0, 8)}… → ${obj.data.byteLength} bytes`)
+    return c.body(obj.data as Uint8Array<ArrayBuffer>, 200, headers)
   })
 
   // HEAD /:sha256 or /:sha256.ext — return metadata headers
@@ -148,7 +167,7 @@ export function blossomRoutes(db: DB): Hono {
       sha256: b.sha256,
       size: b.size,
       type: b.type,
-      uploaded: Math.floor(new Date(b.uploaded_at).getTime() / 1000),
+      uploaded: b.uploaded_at,
     })))
   })
 

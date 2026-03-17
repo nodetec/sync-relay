@@ -1,11 +1,11 @@
 import { Hono } from "hono"
 import { setCookie, deleteCookie } from "hono/cookie"
-import { count, desc, eq, sql } from "drizzle-orm"
+import { and, count, desc, eq, lt, sql } from "drizzle-orm"
 import type { DB } from "../db"
 import type { AccessControl } from "../access"
 import type { Storage } from "../relay/storage"
 import type { ConnectionManager } from "../connections"
-import { blobs, blobOwners, events, inviteCodes } from "../schema"
+import { blobs, blobOwners, events, inviteCodes, users } from "../schema"
 import { generateCode } from "../access"
 import { adminAuth } from "./middleware"
 import * as blobDb from "../blossom/db"
@@ -153,31 +153,50 @@ export function adminRoutes(deps: AdminDeps): Hono {
 
   // Blobs API
   app.get("/api/blobs", async (c) => {
-    const rows = await db
-      .select({
-        sha256: blobs.sha256,
-        size: blobs.size,
-        type: blobs.type,
-        uploadedAt: blobs.uploadedAt,
-        ownerPubkey: blobOwners.pubkey,
-      })
-      .from(blobs)
-      .leftJoin(blobOwners, eq(blobs.sha256, blobOwners.sha256))
-      .orderBy(desc(blobs.uploadedAt))
-      .limit(200)
+    const cursor = c.req.query("cursor") // epoch seconds cursor
+    const limit = 50
 
-    // Group owners by sha256
-    const blobMap = new Map<string, { sha256: string; size: number; type: string | null; uploaded_at: string; owners: string[] }>()
-    for (const r of rows) {
-      let entry = blobMap.get(r.sha256)
-      if (!entry) {
-        entry = { sha256: r.sha256, size: r.size, type: r.type, uploaded_at: r.uploadedAt.toISOString(), owners: [] }
-        blobMap.set(r.sha256, entry)
-      }
-      if (r.ownerPubkey) entry.owners.push(r.ownerPubkey)
+    // Step 1: paginate blobs only
+    let blobQuery = db
+      .select({ sha256: blobs.sha256, size: blobs.size, type: blobs.type, uploadedAt: blobs.uploadedAt })
+      .from(blobs)
+      .orderBy(desc(blobs.uploadedAt))
+      .limit(limit)
+      .$dynamic()
+
+    if (cursor) {
+      blobQuery = blobQuery.where(lt(blobs.uploadedAt, Number(cursor)))
     }
 
-    return c.json({ blobs: Array.from(blobMap.values()).slice(0, 100) })
+    const blobRows = await blobQuery
+    if (blobRows.length === 0) {
+      return c.json({ blobs: [], next_cursor: null })
+    }
+
+    // Step 2: fetch owners for this page of blobs
+    const hashes = blobRows.map((r) => r.sha256)
+    const ownerRows = await db
+      .select({ sha256: blobOwners.sha256, pubkey: blobOwners.pubkey })
+      .from(blobOwners)
+      .where(sql`${blobOwners.sha256} = ANY(${hashes})`)
+
+    const ownerMap = new Map<string, string[]>()
+    for (const r of ownerRows) {
+      const list = ownerMap.get(r.sha256) ?? []
+      list.push(r.pubkey)
+      ownerMap.set(r.sha256, list)
+    }
+
+    const items = blobRows.map((r) => ({
+      sha256: r.sha256,
+      size: r.size,
+      type: r.type,
+      uploaded_at: r.uploadedAt,
+      owners: ownerMap.get(r.sha256) ?? [],
+    }))
+    const nextCursor = items.length === limit ? String(items[items.length - 1].uploaded_at) : null
+
+    return c.json({ blobs: items, next_cursor: nextCursor })
   })
 
   app.delete("/api/blobs/:sha256", async (c) => {
@@ -194,6 +213,13 @@ export function adminRoutes(deps: AdminDeps): Hono {
   app.get("/api/events", async (c) => {
     const kindParam = c.req.query("kind")
     const pubkeyParam = c.req.query("pubkey")
+    const cursor = c.req.query("cursor") // created_at unix timestamp
+    const limit = 50
+
+    const conditions = []
+    if (kindParam !== undefined) conditions.push(eq(events.kind, Number(kindParam)))
+    if (pubkeyParam !== undefined) conditions.push(eq(events.pubkey, pubkeyParam))
+    if (cursor !== undefined) conditions.push(lt(events.createdAt, Number(cursor)))
 
     let query = db
       .select({
@@ -206,81 +232,62 @@ export function adminRoutes(deps: AdminDeps): Hono {
       .from(events)
       .$dynamic()
 
-    if (kindParam !== undefined) {
-      query = query.where(eq(events.kind, Number(kindParam)))
-    }
-    if (pubkeyParam !== undefined) {
-      query = query.where(eq(events.pubkey, pubkeyParam))
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions))
     }
 
-    const rows = await query.orderBy(desc(events.createdAt)).limit(100)
+    const rows = await query.orderBy(desc(events.createdAt)).limit(limit)
 
-    return c.json({
-      events: rows.map((r) => ({
-        id: r.id,
-        pubkey: r.pubkey,
-        kind: r.kind,
-        created_at: r.createdAt,
-        content: r.content.length > 200 ? r.content.slice(0, 200) + "…" : r.content,
-      })),
-    })
+    const items = rows.map((r) => ({
+      id: r.id,
+      pubkey: r.pubkey,
+      kind: r.kind,
+      created_at: r.createdAt,
+      content: r.content.length > 200 ? r.content.slice(0, 200) + "…" : r.content,
+    }))
+    const nextCursor = items.length === limit ? String(items[items.length - 1].created_at) : null
+
+    return c.json({ events: items, next_cursor: nextCursor })
   })
 
   // Users API — per-user storage and event stats
   app.get("/api/users", async (c) => {
-    const usageMap = await blobDb.getStorageUsageByPubkey(db)
-
-    // Count blobs per pubkey
-    const blobCountRows = await db
-      .select({ pubkey: blobOwners.pubkey, count: count() })
-      .from(blobOwners)
-      .groupBy(blobOwners.pubkey)
-    const blobCountMap = new Map<string, number>()
-    for (const r of blobCountRows) blobCountMap.set(r.pubkey, Number(r.count))
-
-    // Count events per user pubkey
-    // For kind:1059 gift wraps, the real user is the p-tag recipient (pubkey is ephemeral)
-    // For all other kinds, the user is the event pubkey
-    const eventCountRows = await db.execute(sql`
-      SELECT user_pubkey, COUNT(*) as count FROM (
-        SELECT CASE
-          WHEN ${events.kind} = 1059 THEN (
-            SELECT et.tag_value FROM event_tags et
-            WHERE et.event_id = ${events.id} AND et.tag_name = 'p'
-            LIMIT 1
-          )
-          ELSE ${events.pubkey}
-        END AS user_pubkey
-        FROM ${events}
-      ) sub
-      WHERE user_pubkey IS NOT NULL
-      GROUP BY user_pubkey
-    `)
+    const [blobStats, eventCounts] = await Promise.all([
+      // Blob stats via Drizzle (users → blob_owners → blobs)
+      db.select({
+          pubkey: users.pubkey,
+          storageLimitBytes: users.storageLimitBytes,
+          storageUsedBytes: sql<number>`COALESCE(SUM(${blobs.size}), 0)`,
+          blobCount: sql<number>`COUNT(DISTINCT ${blobOwners.sha256})`,
+        })
+        .from(users)
+        .leftJoin(blobOwners, eq(blobOwners.pubkey, users.pubkey))
+        .leftJoin(blobs, eq(blobs.sha256, blobOwners.sha256))
+        .groupBy(users.pubkey, users.storageLimitBytes)
+        .orderBy(sql`COALESCE(SUM(${blobs.size}), 0) DESC`),
+      // Event counts per user (gift wraps use recipient column)
+      db.select({
+          userPubkey: sql<string>`COALESCE(${events.recipient}, ${events.pubkey})`,
+          eventCount: count(),
+        })
+        .from(events)
+        .groupBy(sql`COALESCE(${events.recipient}, ${events.pubkey})`),
+    ])
     const eventCountMap = new Map<string, number>()
-    for (const r of eventCountRows as unknown as { user_pubkey: string; count: string }[]) {
-      eventCountMap.set(r.user_pubkey, Number(r.count))
+    for (const r of eventCounts) {
+      eventCountMap.set(r.userPubkey, Number(r.eventCount))
     }
 
-    // Get allowlist with limits
-    const allowlist = await access.list()
-    const limitMap = new Map<string, number | null>()
-    for (const p of allowlist) limitMap.set(p.pubkey, p.storage_limit_bytes)
-
-    // Merge all pubkeys from all sources
-    const allPubkeys = new Set([...usageMap.keys(), ...blobCountMap.keys(), ...eventCountMap.keys()])
-
-    const users = Array.from(allPubkeys).map((pubkey) => ({
-      pubkey,
-      storage_used_bytes: usageMap.get(pubkey) ?? 0,
-      storage_limit_bytes: limitMap.get(pubkey) ?? null,
-      blob_count: blobCountMap.get(pubkey) ?? 0,
-      event_count: eventCountMap.get(pubkey) ?? 0,
-    }))
-
-    // Sort by storage used descending
-    users.sort((a, b) => b.storage_used_bytes - a.storage_used_bytes)
-
-    return c.json({ users, default_storage_limit_bytes: DEFAULT_STORAGE_LIMIT_BYTES })
+    return c.json({
+      users: blobStats.map((r) => ({
+        pubkey: r.pubkey,
+        storage_used_bytes: Number(r.storageUsedBytes),
+        storage_limit_bytes: r.storageLimitBytes,
+        blob_count: Number(r.blobCount),
+        event_count: eventCountMap.get(r.pubkey) ?? 0,
+      })),
+      default_storage_limit_bytes: DEFAULT_STORAGE_LIMIT_BYTES,
+    })
   })
 
   // Connections API

@@ -1,9 +1,9 @@
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useInfiniteQuery } from "@tanstack/react-query"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { fetchEvents } from "@/lib/api"
+import { formatTimestamp } from "@/lib/utils"
 
 const KIND_LABELS: Record<number, string> = {
   0: "Metadata",
@@ -33,10 +34,6 @@ function kindLabel(kind: number) {
   return KIND_LABELS[kind] ?? `Kind ${kind}`
 }
 
-function formatTimestamp(ts: number) {
-  return new Date(ts * 1000).toLocaleString()
-}
-
 export function EventsPage() {
   const [kindFilter, setKindFilter] = useState("")
   const [pubkeyFilter, setPubkeyFilter] = useState("")
@@ -46,11 +43,15 @@ export function EventsPage() {
   if (pubkeyFilter && /^[a-f0-9]{64}$/.test(pubkeyFilter))
     params.pubkey = pubkeyFilter
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["events", params],
-    queryFn: () => fetchEvents(params),
-    refetchInterval: 10000,
-  })
+  const { data, hasNextPage, fetchNextPage, isFetchingNextPage } =
+    useInfiniteQuery({
+      queryKey: ["events", params],
+      queryFn: ({ pageParam }) => fetchEvents({ ...params, cursor: pageParam }),
+      initialPageParam: undefined as string | undefined,
+      getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    })
+
+  const allEvents = data?.pages.flatMap((p) => p.events) ?? []
 
   return (
     <div className="space-y-6">
@@ -80,57 +81,64 @@ export function EventsPage() {
         <CardHeader>
           <CardTitle className="text-base">
             Events{" "}
-            {data && (
+            {allEvents.length > 0 && (
               <span className="font-normal text-muted-foreground">
-                ({data.events.length})
+                ({allEvents.length}{hasNextPage ? "+" : ""})
               </span>
             )}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : !data?.events.length ? (
+          {!allEvents.length ? (
             <p className="py-4 text-center text-sm text-muted-foreground">
               No events found.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[180px]">ID</TableHead>
-                  <TableHead>Kind</TableHead>
-                  <TableHead>Pubkey</TableHead>
-                  <TableHead>Content</TableHead>
-                  <TableHead className="text-right">Created</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.events.map((evt) => (
-                  <TableRow key={evt.id}>
-                    <TableCell className="font-mono text-xs">
-                      {evt.id.slice(0, 16)}...
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{kindLabel(evt.kind)}</Badge>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {evt.pubkey.slice(0, 12)}...
-                    </TableCell>
-                    <TableCell className="max-w-[300px] truncate text-xs text-muted-foreground">
-                      {evt.content || "—"}
-                    </TableCell>
-                    <TableCell className="text-right text-xs text-muted-foreground">
-                      {formatTimestamp(evt.created_at)}
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[180px]">ID</TableHead>
+                    <TableHead>Kind</TableHead>
+                    <TableHead>Pubkey</TableHead>
+                    <TableHead>Content</TableHead>
+                    <TableHead className="text-right">Created</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {allEvents.map((evt) => (
+                    <TableRow key={evt.id}>
+                      <TableCell className="font-mono text-xs">
+                        {evt.id.slice(0, 16)}...
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{kindLabel(evt.kind)}</Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {evt.pubkey.slice(0, 12)}...
+                      </TableCell>
+                      <TableCell className="max-w-[300px] truncate text-xs text-muted-foreground">
+                        {evt.content || "—"}
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground">
+                        {formatTimestamp(evt.created_at)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {hasNextPage && (
+                <div className="mt-4 flex justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => fetchNextPage()}
+                    disabled={isFetchingNextPage}
+                  >
+                    {isFetchingNextPage ? "Loading..." : "Load more"}
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
