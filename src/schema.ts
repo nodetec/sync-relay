@@ -11,9 +11,10 @@ export const events = pgTable("events", {
   tags: jsonb("tags").notNull().$type<string[][]>(),
   content: text("content").notNull(),
   sig: text("sig").notNull(),
+  firstSeen: bigint("first_seen", { mode: "number" }).notNull().default(sql`(EXTRACT(EPOCH FROM NOW())::BIGINT)`),
 }, (t) => [
-  index("idx_events_kind").on(t.kind),
   index("idx_events_created_at").on(t.createdAt),
+  index("idx_events_kind_created_at").on(t.kind, t.createdAt),
   index("idx_events_recipient").on(t.recipient),
   index("idx_events_pubkey_kind_dtag").on(t.pubkey, t.kind, t.dTag),
 ])

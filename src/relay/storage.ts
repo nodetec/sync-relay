@@ -6,6 +6,42 @@ import { getEventKindCategory } from "./event"
 import { isDeletionEvent, getDeletionTargetIds, getDeletionTargetAddrs } from "./nip/09"
 import { KIND_GIFT_WRAP, canDeleteGiftWrap, isGiftWrap } from "./nip/59"
 
+/**
+ * Build a SQL condition for a column that supports both exact (64-char) and prefix matching.
+ * NIP-01: filter ids and authors can be hex prefixes of any even length.
+ */
+function buildPrefixCondition(
+  column: string,
+  values: string[],
+  params: (string | number | string[])[],
+  paramIdx: number
+): { sql: string; nextIdx: number } {
+  const exact: string[] = []
+  const prefixes: string[] = []
+  for (const v of values) {
+    if (v.length === 64) {
+      exact.push(v)
+    } else {
+      prefixes.push(v)
+    }
+  }
+
+  const parts: string[] = []
+  if (exact.length > 0) {
+    parts.push(`${column} = ANY($${paramIdx})`)
+    params.push(exact)
+    paramIdx++
+  }
+  for (const prefix of prefixes) {
+    parts.push(`${column} LIKE $${paramIdx}`)
+    params.push(`${prefix}%`)
+    paramIdx++
+  }
+
+  const combined = parts.length === 1 ? parts[0] : `(${parts.join(" OR ")})`
+  return { sql: combined, nextIdx: paramIdx }
+}
+
 export interface Storage {
   saveEvent(event: NostrEvent): Promise<{ saved: boolean; reason?: string; changes: ChangeEntry[] }>
   queryEvents(filters: Filter[]): Promise<NostrEvent[]>
@@ -69,6 +105,7 @@ export function initStorage(db: DB): Storage {
       tags: event.tags,
       content: event.content,
       sig: event.sig,
+      firstSeen: Math.floor(Date.now() / 1000),
     }).onConflictDoNothing()
 
     const tagRows = event.tags
@@ -237,14 +274,14 @@ export function initStorage(db: DB): Storage {
       let paramIdx = 1
 
       if (filter.ids && filter.ids.length > 0) {
-        conditions.push(`e.id = ANY($${paramIdx})`)
-        params.push(filter.ids)
-        paramIdx++
+        const cond = buildPrefixCondition("e.id", filter.ids, params, paramIdx)
+        conditions.push(cond.sql)
+        paramIdx = cond.nextIdx
       }
       if (filter.authors && filter.authors.length > 0) {
-        conditions.push(`e.pubkey = ANY($${paramIdx})`)
-        params.push(filter.authors)
-        paramIdx++
+        const cond = buildPrefixCondition("e.pubkey", filter.authors, params, paramIdx)
+        conditions.push(cond.sql)
+        paramIdx = cond.nextIdx
       }
       if (filter.kinds && filter.kinds.length > 0) {
         conditions.push(`e.kind = ANY($${paramIdx})`)
@@ -413,9 +450,9 @@ export function initStorage(db: DB): Storage {
       paramIdx++
     }
     if (filter.authors && filter.authors.length > 0) {
-      conditions.push(`c.pubkey = ANY($${paramIdx})`)
-      params.push(filter.authors)
-      paramIdx++
+      const cond = buildPrefixCondition("c.pubkey", filter.authors, params, paramIdx)
+      conditions.push(cond.sql)
+      paramIdx = cond.nextIdx
     }
 
     for (const key of Object.keys(filter)) {
