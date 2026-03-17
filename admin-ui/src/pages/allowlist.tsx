@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from "react"
+import { useState, useMemo, type FormEvent } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, Trash2, Shield, Pencil } from "lucide-react"
+import type { ColumnDef } from "@tanstack/react-table"
+import { ArrowUpDown, Plus, Trash2, Shield, Pencil } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,14 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/data-table"
 import { nip19 } from "nostr-tools"
 import {
   fetchAllowlist,
@@ -183,6 +177,101 @@ export function AllowlistPage() {
     }
   }
 
+  const columns = useMemo<ColumnDef<AllowedPubkey>[]>(
+    () => [
+      {
+        accessorKey: "pubkey",
+        header: "Pubkey",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs">
+            {row.original.pubkey.slice(0, 16)}...
+          </span>
+        ),
+      },
+      {
+        accessorKey: "storage_used_bytes",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Storage <ArrowUpDown className="ml-1 h-3 w-3" />
+          </Button>
+        ),
+        cell: ({ row }) => {
+          const p = row.original
+          const limit = p.storage_limit_bytes ?? defaultLimit
+          const pct = usagePercent(p.storage_used_bytes, limit)
+          return (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-xs">
+                <span>
+                  {formatBytes(p.storage_used_bytes)} / {formatBytes(limit)}
+                </span>
+                {p.storage_limit_bytes !== null && (
+                  <span className="text-muted-foreground">(custom)</span>
+                )}
+                <StorageLimitEditor
+                  pubkey={p}
+                  currentLimit={limit}
+                  defaultLimit={defaultLimit}
+                />
+              </div>
+              <div className="h-1.5 w-full max-w-[200px] rounded-full bg-muted">
+                <div
+                  className={`h-full rounded-full transition-all ${usageColor(pct)}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          )
+        },
+      },
+      {
+        accessorKey: "expires_at",
+        header: "Expires",
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {row.original.expires_at
+              ? new Date(row.original.expires_at * 1000).toLocaleString()
+              : "Never"}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Revoke access?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This pubkey will no longer be able to use the relay.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => revokeMutation.mutate(row.original.pubkey)}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Revoke
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ),
+      },
+    ],
+    [defaultLimit, revokeMutation]
+  )
+
   return (
     <div className="space-y-6">
       <div>
@@ -223,111 +312,11 @@ export function AllowlistPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Allowed Pubkeys{" "}
-            {data && (
-              <span className="font-normal text-muted-foreground">
-                ({data.pubkeys.length})
-              </span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!data?.pubkeys.length ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              No pubkeys on the allowlist.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Pubkey</TableHead>
-                  <TableHead>Storage</TableHead>
-                  <TableHead>Expires</TableHead>
-                  <TableHead className="w-[60px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.pubkeys.map((p) => {
-                  const limit = p.storage_limit_bytes ?? defaultLimit
-                  const pct = usagePercent(p.storage_used_bytes, limit)
-                  return (
-                    <TableRow key={p.pubkey}>
-                      <TableCell className="font-mono text-xs">
-                        {p.pubkey.slice(0, 16)}...
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1.5 text-xs">
-                            <span>
-                              {formatBytes(p.storage_used_bytes)} /{" "}
-                              {formatBytes(limit)}
-                            </span>
-                            {p.storage_limit_bytes !== null && (
-                              <span className="text-muted-foreground">
-                                (custom)
-                              </span>
-                            )}
-                            <StorageLimitEditor
-                              pubkey={p}
-                              currentLimit={limit}
-                              defaultLimit={defaultLimit}
-                            />
-                          </div>
-                          <div className="h-1.5 w-full max-w-[200px] rounded-full bg-muted">
-                            <div
-                              className={`h-full rounded-full transition-all ${usageColor(pct)}`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {p.expires_at
-                          ? new Date(p.expires_at * 1000).toLocaleString()
-                          : "Never"}
-                      </TableCell>
-                      <TableCell>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                Revoke access?
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This pubkey will no longer be able to use the
-                                relay.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() =>
-                                  revokeMutation.mutate(p.pubkey)
-                                }
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                Revoke
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <DataTable
+        columns={columns}
+        data={data?.pubkeys ?? []}
+        emptyMessage="No pubkeys on the allowlist."
+      />
     </div>
   )
 }

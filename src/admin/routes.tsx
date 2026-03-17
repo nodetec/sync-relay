@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { setCookie, deleteCookie } from "hono/cookie"
-import { and, count, desc, eq, lt, sql } from "drizzle-orm"
+import { and, count, desc, eq, inArray, lt, sql } from "drizzle-orm"
 import type { DB } from "../db"
 import type { AccessControl } from "../access"
 import type { Storage } from "../relay/storage"
@@ -160,15 +160,13 @@ export function adminRoutes(deps: AdminDeps): Hono {
     let blobQuery = db
       .select({ sha256: blobs.sha256, size: blobs.size, type: blobs.type, uploadedAt: blobs.uploadedAt })
       .from(blobs)
-      .orderBy(desc(blobs.uploadedAt))
-      .limit(limit)
       .$dynamic()
 
     if (cursor) {
       blobQuery = blobQuery.where(lt(blobs.uploadedAt, Number(cursor)))
     }
 
-    const blobRows = await blobQuery
+    const blobRows = await blobQuery.orderBy(desc(blobs.uploadedAt)).limit(limit)
     if (blobRows.length === 0) {
       return c.json({ blobs: [], next_cursor: null })
     }
@@ -178,7 +176,7 @@ export function adminRoutes(deps: AdminDeps): Hono {
     const ownerRows = await db
       .select({ sha256: blobOwners.sha256, pubkey: blobOwners.pubkey })
       .from(blobOwners)
-      .where(sql`${blobOwners.sha256} = ANY(${hashes})`)
+      .where(inArray(blobOwners.sha256, hashes))
 
     const ownerMap = new Map<string, string[]>()
     for (const r of ownerRows) {

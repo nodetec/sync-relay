@@ -1,18 +1,12 @@
 import { useState } from "react"
 import { useInfiniteQuery } from "@tanstack/react-query"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import type { ColumnDef } from "@tanstack/react-table"
+import { ArrowUpDown } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { fetchEvents } from "@/lib/api"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { DataTable } from "@/components/data-table"
+import { fetchEvents, type EventEntry } from "@/lib/api"
 import { formatTimestamp } from "@/lib/utils"
 
 const KIND_LABELS: Record<number, string> = {
@@ -33,6 +27,59 @@ const KIND_LABELS: Record<number, string> = {
 function kindLabel(kind: number) {
   return KIND_LABELS[kind] ?? `Kind ${kind}`
 }
+
+const columns: ColumnDef<EventEntry>[] = [
+  {
+    accessorKey: "id",
+    header: "ID",
+    cell: ({ row }) => (
+      <span className="font-mono text-xs">
+        {row.original.id.slice(0, 16)}...
+      </span>
+    ),
+  },
+  {
+    accessorKey: "kind",
+    header: "Kind",
+    cell: ({ row }) => (
+      <Badge variant="secondary">{kindLabel(row.original.kind)}</Badge>
+    ),
+  },
+  {
+    accessorKey: "pubkey",
+    header: "Pubkey",
+    cell: ({ row }) => (
+      <span className="font-mono text-xs">
+        {row.original.pubkey.slice(0, 12)}...
+      </span>
+    ),
+  },
+  {
+    accessorKey: "content",
+    header: "Content",
+    cell: ({ row }) => (
+      <span className="max-w-[300px] truncate text-xs text-muted-foreground block">
+        {row.original.content || "—"}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "created_at",
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+      >
+        Created <ArrowUpDown className="ml-1 h-3 w-3" />
+      </Button>
+    ),
+    cell: ({ row }) => (
+      <span className="text-right text-xs text-muted-foreground block">
+        {formatTimestamp(row.original.created_at)}
+      </span>
+    ),
+  },
+]
 
 export function EventsPage() {
   const [kindFilter, setKindFilter] = useState("")
@@ -59,6 +106,11 @@ export function EventsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Events</h1>
         <p className="text-sm text-muted-foreground">
           Browse stored Nostr events
+          {allEvents.length > 0 && (
+            <span className="ml-1">
+              ({allEvents.length}{hasNextPage ? "+" : ""})
+            </span>
+          )}
         </p>
       </div>
 
@@ -77,71 +129,14 @@ export function EventsPage() {
         />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Events{" "}
-            {allEvents.length > 0 && (
-              <span className="font-normal text-muted-foreground">
-                ({allEvents.length}{hasNextPage ? "+" : ""})
-              </span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!allEvents.length ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              No events found.
-            </p>
-          ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[180px]">ID</TableHead>
-                    <TableHead>Kind</TableHead>
-                    <TableHead>Pubkey</TableHead>
-                    <TableHead>Content</TableHead>
-                    <TableHead className="text-right">Created</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {allEvents.map((evt) => (
-                    <TableRow key={evt.id}>
-                      <TableCell className="font-mono text-xs">
-                        {evt.id.slice(0, 16)}...
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{kindLabel(evt.kind)}</Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {evt.pubkey.slice(0, 12)}...
-                      </TableCell>
-                      <TableCell className="max-w-[300px] truncate text-xs text-muted-foreground">
-                        {evt.content || "—"}
-                      </TableCell>
-                      <TableCell className="text-right text-xs text-muted-foreground">
-                        {formatTimestamp(evt.created_at)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {hasNextPage && (
-                <div className="mt-4 flex justify-center">
-                  <Button
-                    variant="outline"
-                    onClick={() => fetchNextPage()}
-                    disabled={isFetchingNextPage}
-                  >
-                    {isFetchingNextPage ? "Loading..." : "Load more"}
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+      <DataTable
+        columns={columns}
+        data={allEvents}
+        emptyMessage="No events found."
+        hasNextPage={hasNextPage}
+        isFetchingNextPage={isFetchingNextPage}
+        onLoadMore={() => fetchNextPage()}
+      />
     </div>
   )
 }

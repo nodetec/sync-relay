@@ -1,6 +1,7 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, Ticket, Copy, Check, Ban } from "lucide-react"
+import type { ColumnDef } from "@tanstack/react-table"
+import { ArrowUpDown, Plus, Ticket, Copy, Check, Ban } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,14 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/data-table"
 import {
   fetchInviteCodes,
   createInviteCode,
@@ -84,6 +78,89 @@ export function InviteCodesPage() {
     },
   })
 
+  const columns = useMemo<ColumnDef<InviteCode>[]>(
+    () => [
+      {
+        accessorKey: "code",
+        header: "Code",
+        cell: ({ row }) => (
+          <div className="flex items-center gap-1">
+            <code className="font-mono text-xs">{row.original.code}</code>
+            <CopyButton text={row.original.code} />
+          </div>
+        ),
+      },
+      {
+        accessorKey: "use_count",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Uses <ArrowUpDown className="ml-1 h-3 w-3" />
+          </Button>
+        ),
+        cell: ({ row }) => (
+          <span className="text-sm">
+            {row.original.use_count} / {row.original.max_uses}
+          </span>
+        ),
+      },
+      {
+        id: "status",
+        header: "Status",
+        cell: ({ row }) => {
+          const status = codeStatus(row.original)
+          return <Badge variant={status.variant}>{status.label}</Badge>
+        },
+      },
+      {
+        accessorKey: "created_at",
+        header: "Created",
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground">
+            {new Date(row.original.created_at * 1000).toLocaleDateString()}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => {
+          if (row.original.revoked) return null
+          return (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <Ban className="h-4 w-4 text-destructive" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Revoke invite code?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This code will no longer be usable. Users who already
+                    redeemed it will not be affected.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => revokeMutation.mutate(row.original.id)}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Revoke
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )
+        },
+      },
+    ],
+    [revokeMutation]
+  )
+
   return (
     <div className="space-y-6">
       <div>
@@ -131,96 +208,11 @@ export function InviteCodesPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            All Codes{" "}
-            {data && (
-              <span className="font-normal text-muted-foreground">
-                ({data.invite_codes.length})
-              </span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!data?.invite_codes.length ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              No invite codes created yet.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Uses</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="w-[60px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.invite_codes.map((code) => {
-                  const status = codeStatus(code)
-                  return (
-                    <TableRow key={code.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <code className="font-mono text-xs">
-                            {code.code}
-                          </code>
-                          <CopyButton text={code.code} />
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {code.use_count} / {code.max_uses}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={status.variant}>{status.label}</Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {new Date(code.created_at * 1000).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        {!code.revoked && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <Ban className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                  Revoke invite code?
-                                </AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This code will no longer be usable. Users who
-                                  already redeemed it will not be affected.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() =>
-                                    revokeMutation.mutate(code.id)
-                                  }
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                >
-                                  Revoke
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <DataTable
+        columns={columns}
+        data={data?.invite_codes ?? []}
+        emptyMessage="No invite codes created yet."
+      />
     </div>
   )
 }
