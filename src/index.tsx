@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { createBunWebSocket } from "hono/bun"
+import { serveStatic } from "hono/bun"
 import { cors } from "hono/cors"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { createDB } from "./db"
@@ -12,6 +13,8 @@ import { getRelayInfoDocument } from "./relay/nip/11"
 import { blossomRoutes } from "./blossom/routes"
 import { adminRoutes } from "./admin/routes"
 import { initS3 } from "./blossom/s3"
+import { getLatestRelease } from "./landing/github"
+import { LandingPage } from "./landing/page"
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10)
 const RELAY_URL = process.env.RELAY_URL ?? `ws://localhost:${PORT}`
@@ -71,7 +74,10 @@ const wsHandler = upgradeWebSocket(() => {
 app.get("/ws", wsHandler)
 app.get("/", wsHandler)
 
-// NIP-11 and fallback (only reached for non-upgrade requests)
+// Static assets (landing page CSS, images)
+app.get("/public/*", serveStatic({ root: "./src/" }))
+
+// NIP-11 and landing page (only reached for non-upgrade requests)
 app.get("/", async (c) => {
   const accept = c.req.header("Accept") ?? ""
   if (accept.includes("application/nostr+json")) {
@@ -83,7 +89,8 @@ app.get("/", async (c) => {
       "Access-Control-Allow-Headers": "Accept",
     })
   }
-  return c.text("Use a Nostr client to connect.", 200)
+  const release = await getLatestRelease()
+  return c.html(<LandingPage release={release} />)
 })
 
 // Blossom blob routes

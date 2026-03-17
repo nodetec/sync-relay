@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run src/index.ts",
+    "dev": "bun run src/index.tsx",
+    "build:css": "bunx @tailwindcss/cli -i src/landing/styles.css -o src/public/landing.css --minify",
     "test": "bun test"
   },
   "dependencies": {
@@ -15,7 +16,9 @@
     "postgres": "^3.4"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.2.1",
     "@types/bun": "^1.3.10",
-    "drizzle-kit": "^0.31.9"
+    "drizzle-kit": "^0.31.9",
+    "tailwindcss": "^4.2.1"
   }
 }
