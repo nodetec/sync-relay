@@ -6,7 +6,7 @@ primary_region = "ewr"
 
 [env]
   PORT = "3000"
-  RELAY_URL = "wss://relay.comet.md"
+  RELAY_URL = "wss://comet.md"
 
 [http_service]
   internal_port = 3000
