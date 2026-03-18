@@ -44,6 +44,23 @@ export function fetchStats() {
   return request<Stats>("/stats")
 }
 
+// Chart data
+export type EventsByKind = { kind: number; count: number }
+export type EventsOverTime = { date: string; events: number }
+export type StorageByUser = { pubkey: string; storage: number }
+
+export function fetchEventsByKind() {
+  return request<{ data: EventsByKind[] }>("/stats/events-by-kind")
+}
+
+export function fetchEventsOverTime() {
+  return request<{ data: EventsOverTime[] }>("/stats/events-over-time")
+}
+
+export function fetchStorageByUser() {
+  return request<{ data: StorageByUser[] }>("/stats/storage-by-user")
+}
+
 // Allowlist
 export type AllowedPubkey = {
   pubkey: string

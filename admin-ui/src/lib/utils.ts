@@ -21,6 +21,29 @@ export function usagePercent(used: number, limit: number): number {
   return Math.min(100, Math.round((used / limit) * 100))
 }
 
+const KIND_LABELS: Record<number, string> = {
+  0: "Metadata",
+  1: "Note",
+  3: "Contacts",
+  4: "DM",
+  5: "Delete",
+  7: "Reaction",
+  9: "Delete",
+  23: "Long-form",
+  1059: "Gift Wrap",
+  10002: "Relay List",
+  24242: "Blossom Auth",
+  30023: "Long-form",
+}
+
+export function kindLabel(kind: number): string {
+  return KIND_LABELS[kind] ?? `Kind ${kind}`
+}
+
+export function shortPubkey(pubkey: string): string {
+  return pubkey.slice(0, 8) + "…"
+}
+
 export function usageColor(pct: number): string {
   if (pct >= 95) return "bg-destructive"
   if (pct >= 80) return "bg-yellow-500"

@@ -18,26 +18,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { DataTable } from "@/components/data-table"
 import { deleteEvents, fetchEvents, type EventEntry } from "@/lib/api"
-import { formatTimestamp } from "@/lib/utils"
-
-const KIND_LABELS: Record<number, string> = {
-  0: "Metadata",
-  1: "Note",
-  3: "Contacts",
-  4: "DM",
-  5: "Delete",
-  7: "Reaction",
-  9: "Delete",
-  23: "Long-form",
-  1059: "Gift Wrap",
-  10002: "Relay List",
-  24242: "Blossom Auth",
-  30023: "Long-form",
-}
-
-function kindLabel(kind: number) {
-  return KIND_LABELS[kind] ?? `Kind ${kind}`
-}
+import { formatTimestamp, kindLabel } from "@/lib/utils"
 
 export function EventsPage() {
   const queryClient = useQueryClient()

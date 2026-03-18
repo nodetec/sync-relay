@@ -65,6 +65,54 @@ export function adminRoutes(deps: AdminDeps): Hono {
     })
   })
 
+  // Stats: events by kind
+  app.get("/api/stats/events-by-kind", async (c) => {
+    const rows = await db
+      .select({ kind: events.kind, count: count() })
+      .from(events)
+      .groupBy(events.kind)
+      .orderBy(desc(count()))
+      .limit(10)
+    return c.json({
+      data: rows.map((r) => ({ kind: r.kind, count: Number(r.count) })),
+    })
+  })
+
+  // Stats: events over time (last 30 days, grouped by day)
+  app.get("/api/stats/events-over-time", async (c) => {
+    const thirtyDaysAgo = Math.floor(Date.now() / 1000) - 30 * 86400
+    const rows = await db
+      .select({
+        day: sql<string>`TO_CHAR(TO_TIMESTAMP(${events.createdAt}), 'YYYY-MM-DD')`,
+        count: count(),
+      })
+      .from(events)
+      .where(sql`${events.createdAt} >= ${thirtyDaysAgo}`)
+      .groupBy(sql`TO_CHAR(TO_TIMESTAMP(${events.createdAt}), 'YYYY-MM-DD')`)
+      .orderBy(sql`TO_CHAR(TO_TIMESTAMP(${events.createdAt}), 'YYYY-MM-DD')`)
+    return c.json({ data: rows.map((r) => ({ date: r.day, events: Number(r.count) })) })
+  })
+
+  // Stats: storage usage by user (top 8)
+  app.get("/api/stats/storage-by-user", async (c) => {
+    const rows = await db
+      .select({
+        pubkey: blobOwners.pubkey,
+        storage: sql<number>`COALESCE(SUM(${blobs.size}), 0)`,
+      })
+      .from(blobOwners)
+      .leftJoin(blobs, eq(blobs.sha256, blobOwners.sha256))
+      .groupBy(blobOwners.pubkey)
+      .orderBy(sql`COALESCE(SUM(${blobs.size}), 0) DESC`)
+      .limit(8)
+    return c.json({
+      data: rows.map((r) => ({
+        pubkey: r.pubkey,
+        storage: Number(r.storage),
+      })),
+    })
+  })
+
   // Allowlist API
   app.get("/api/allow", async (c) => {
     const [pubkeys, usageMap] = await Promise.all([
