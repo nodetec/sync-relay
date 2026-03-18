@@ -12,6 +12,12 @@ RUN cd admin-ui && bun install
 COPY admin-ui/ admin-ui/
 RUN cd admin-ui && bun run build
 
+# Build dashboard UI
+COPY dashboard-ui/package.json dashboard-ui/bun.lock* dashboard-ui/
+RUN cd dashboard-ui && bun install
+COPY dashboard-ui/ dashboard-ui/
+RUN cd dashboard-ui && bun run build
+
 # Copy server source
 COPY src/ src/
 COPY drizzle/ drizzle/

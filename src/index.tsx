@@ -130,6 +130,10 @@ if (ADMIN_TOKEN) {
   app.get("/admin/*", serveStatic({ root: "./admin-ui/dist/", path: "index.html" }))
 }
 
+// Serve dashboard SPA
+app.get("/dashboard/assets/*", serveStatic({ root: "./dashboard-ui/dist/", rewriteRequestPath: (path) => path.replace("/dashboard/", "/") }))
+app.get("/dashboard/*", serveStatic({ root: "./dashboard-ui/dist/", path: "index.html" }))
+
 // Start server
 const server = Bun.serve({
   port: PORT,
