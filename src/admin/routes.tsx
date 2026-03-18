@@ -248,6 +248,15 @@ export function adminRoutes(deps: AdminDeps): Hono {
     return c.json({ events: items, next_cursor: nextCursor })
   })
 
+  // DELETE /api/events — bulk delete events by IDs
+  app.delete("/api/events", async (c) => {
+    const body = await c.req.json<{ ids: string[] }>()
+    if (!body.ids?.length) return c.json({ deleted: 0 })
+
+    await db.delete(events).where(inArray(events.id, body.ids))
+    return c.json({ deleted: body.ids.length })
+  })
+
   // Users API — per-user storage and event stats
   app.get("/api/users", async (c) => {
     const [blobStats, eventCounts] = await Promise.all([

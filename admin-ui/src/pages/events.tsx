@@ -1,12 +1,13 @@
-import { useState } from "react"
-import { useInfiniteQuery } from "@tanstack/react-query"
+import { useMemo, useState } from "react"
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { ArrowUpDown } from "lucide-react"
+import { ArrowUpDown, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { DataTable } from "@/components/data-table"
-import { fetchEvents, type EventEntry } from "@/lib/api"
+import { deleteEvents, fetchEvents, type EventEntry } from "@/lib/api"
 import { formatTimestamp } from "@/lib/utils"
 
 const KIND_LABELS: Record<number, string> = {
@@ -28,60 +29,8 @@ function kindLabel(kind: number) {
   return KIND_LABELS[kind] ?? `Kind ${kind}`
 }
 
-const columns: ColumnDef<EventEntry>[] = [
-  {
-    accessorKey: "id",
-    header: "ID",
-    cell: ({ row }) => (
-      <span className="font-mono text-xs">
-        {row.original.id.slice(0, 16)}...
-      </span>
-    ),
-  },
-  {
-    accessorKey: "kind",
-    header: "Kind",
-    cell: ({ row }) => (
-      <Badge variant="secondary">{kindLabel(row.original.kind)}</Badge>
-    ),
-  },
-  {
-    accessorKey: "pubkey",
-    header: "Pubkey",
-    cell: ({ row }) => (
-      <span className="font-mono text-xs">
-        {row.original.pubkey.slice(0, 12)}...
-      </span>
-    ),
-  },
-  {
-    accessorKey: "content",
-    header: "Content",
-    cell: ({ row }) => (
-      <span className="max-w-[300px] truncate text-xs text-muted-foreground block">
-        {row.original.content || "—"}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "created_at",
-    header: ({ column }) => (
-      <Button
-        variant="ghost"
-        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-      >
-        Created <ArrowUpDown className="ml-1 h-3 w-3" />
-      </Button>
-    ),
-    cell: ({ row }) => (
-      <span className="text-right text-xs text-muted-foreground block">
-        {formatTimestamp(row.original.created_at)}
-      </span>
-    ),
-  },
-]
-
 export function EventsPage() {
+  const queryClient = useQueryClient()
   const [kindFilter, setKindFilter] = useState("")
   const [pubkeyFilter, setPubkeyFilter] = useState("")
 
@@ -98,7 +47,93 @@ export function EventsPage() {
       getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     })
 
+  const deleteMutation = useMutation({
+    mutationFn: deleteEvents,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["events"] }),
+  })
+
   const allEvents = data?.pages.flatMap((p) => p.events) ?? []
+
+  const columns = useMemo<ColumnDef<EventEntry>[]>(
+    () => [
+      {
+        id: "select",
+        header: ({ table }) => (
+          <Checkbox
+            checked={
+              table.getIsAllPageRowsSelected() ||
+              (table.getIsSomePageRowsSelected() && "indeterminate")
+            }
+            onCheckedChange={(value) =>
+              table.toggleAllPageRowsSelected(!!value)
+            }
+            aria-label="Select all"
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(value) => row.toggleSelected(!!value)}
+            aria-label="Select row"
+          />
+        ),
+        enableSorting: false,
+      },
+      {
+        accessorKey: "id",
+        header: "ID",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs">
+            {row.original.id.slice(0, 16)}...
+          </span>
+        ),
+      },
+      {
+        accessorKey: "kind",
+        header: "Kind",
+        cell: ({ row }) => (
+          <Badge variant="secondary">{kindLabel(row.original.kind)}</Badge>
+        ),
+      },
+      {
+        accessorKey: "pubkey",
+        header: "Pubkey",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs">
+            {row.original.pubkey.slice(0, 12)}...
+          </span>
+        ),
+      },
+      {
+        accessorKey: "content",
+        header: "Content",
+        cell: ({ row }) => (
+          <span className="max-w-[300px] truncate text-xs text-muted-foreground block">
+            {row.original.content || "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "created_at",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            onClick={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          >
+            Created <ArrowUpDown className="ml-1 h-3 w-3" />
+          </Button>
+        ),
+        cell: ({ row }) => (
+          <span className="text-right text-xs text-muted-foreground block">
+            {formatTimestamp(row.original.created_at)}
+          </span>
+        ),
+      },
+    ],
+    []
+  )
 
   return (
     <div className="space-y-6">
@@ -132,10 +167,28 @@ export function EventsPage() {
       <DataTable
         columns={columns}
         data={allEvents}
+        getRowId={(row) => row.id}
+        enableRowSelection
         emptyMessage="No events found."
         hasNextPage={hasNextPage}
         isFetchingNextPage={isFetchingNextPage}
         onLoadMore={() => fetchNextPage()}
+        actionBar={({ selectedRows, clearSelection }) => (
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={deleteMutation.isPending}
+            onClick={async () => {
+              await deleteMutation.mutateAsync(selectedRows.map((r) => r.id))
+              clearSelection()
+            }}
+          >
+            <Trash2 className="mr-1 h-3 w-3" />
+            {deleteMutation.isPending
+              ? "Deleting..."
+              : `Delete ${selectedRows.length}`}
+          </Button>
+        )}
       />
     </div>
   )

@@ -123,6 +123,13 @@ export function fetchEvents(params?: { kind?: number; pubkey?: string; cursor?: 
   return request<EventsPage>(`/events${qs ? `?${qs}` : ""}`)
 }
 
+export function deleteEvents(ids: string[]) {
+  return request<{ deleted: number }>("/events", {
+    method: "DELETE",
+    body: JSON.stringify({ ids }),
+  })
+}
+
 // Invite Codes
 export type InviteCode = {
   id: number

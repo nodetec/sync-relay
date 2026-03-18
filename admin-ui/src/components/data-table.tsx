@@ -5,6 +5,7 @@ import {
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type RowSelectionState,
   type SortingState,
 } from "@tanstack/react-table"
 import { useState } from "react"
@@ -36,6 +37,12 @@ interface DataTableProps<TData, TValue> {
   hasNextPage?: boolean
   isFetchingNextPage?: boolean
   onLoadMore?: () => void
+  enableRowSelection?: boolean
+  getRowId?: (row: TData) => string
+  actionBar?: (props: {
+    selectedRows: TData[]
+    clearSelection: () => void
+  }) => React.ReactNode
 }
 
 export function DataTable<TData, TValue>({
@@ -46,31 +53,53 @@ export function DataTable<TData, TValue>({
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
+  enableRowSelection,
+  getRowId,
+  actionBar,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [pagination, setPagination] = useState({
     pageIndex: 0,
     pageSize: defaultPageSize,
   })
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 
   const table = useReactTable({
     data,
     columns,
+    getRowId,
+    enableRowSelection: !!enableRowSelection,
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
+    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    state: { sorting, pagination },
+    state: { sorting, pagination, rowSelection },
   })
 
   const pageCount = table.getPageCount()
   const currentPage = table.getState().pagination.pageIndex
   const totalRows = table.getFilteredRowModel().rows.length
   const isLastClientPage = !table.getCanNextPage()
+  const selectedRows = table
+    .getSelectedRowModel()
+    .rows.map((r) => r.original)
 
   return (
     <div className="space-y-4">
+      {actionBar && selectedRows.length > 0 && (
+        <div className="flex items-center gap-3 rounded-md border bg-muted/50 px-4 py-2">
+          <span className="text-sm font-medium">
+            {selectedRows.length} selected
+          </span>
+          {actionBar({
+            selectedRows,
+            clearSelection: () => setRowSelection({}),
+          })}
+        </div>
+      )}
+
       <div className="overflow-x-auto border-y md:overflow-hidden md:rounded-md md:border-x">
         <Table>
           <TableHeader>
@@ -92,7 +121,10 @@ export function DataTable<TData, TValue>({
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() && "selected"}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(
