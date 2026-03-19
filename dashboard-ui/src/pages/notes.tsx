@@ -303,7 +303,7 @@ export function NotesPage() {
   return (
     <div className="flex flex-1 min-h-0">
       {/* Left pane: note list */}
-      <div className="w-80 shrink-0 border-r border-border bg-muted/30 flex flex-col">
+      <div className="w-80 shrink-0 border-r border-border bg-muted/30 flex flex-col min-h-0">
         <div className="px-4 py-4">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold tracking-tight">Notes</h2>
@@ -315,7 +315,7 @@ export function NotesPage() {
           </div>
         </div>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-h-0 overflow-hidden">
           {isLoading && notes.length === 0 ? (
             <NoteListSkeleton />
           ) : notes.length === 0 ? (
@@ -359,9 +359,9 @@ export function NotesPage() {
       </div>
 
       {/* Right pane: note detail */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {selectedNote ? (
-          <ScrollArea className="flex-1">
+          <ScrollArea className="flex-1 min-h-0 overflow-hidden">
             <article className="max-w-2xl mx-auto px-8 py-8">
               <header className="mb-6 pb-6 border-b border-border/50">
                 <h1 className="text-2xl font-semibold tracking-tight">
