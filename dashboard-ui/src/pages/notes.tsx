@@ -281,7 +281,7 @@ export function NotesPage() {
 
   if (!isAuthenticated && !isLoading) {
     return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
+      <div className="flex flex-1 items-center justify-center text-muted-foreground">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-5 w-5 animate-spin" />
           <p className="text-sm">Connecting to relay...</p>
@@ -291,7 +291,7 @@ export function NotesPage() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-1 min-h-0">
       {/* Left pane: note list */}
       <div className="w-80 shrink-0 border-r border-border bg-muted/30 flex flex-col">
         <div className="px-4 py-4">
