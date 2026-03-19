@@ -34,6 +34,28 @@ export const LandingPage: FC<{ release: Release | null }> = ({ release }) => {
       </head>
       <body class="antialiased bg-neutral-900 h-full">
         <div class="relative isolate h-full overflow-x-hidden bg-neutral-900">
+          {/* Top nav */}
+          <nav class="absolute top-0 right-0 z-10 p-6 lg:p-8">
+            <a
+              id="auth-btn"
+              href="/dashboard/login"
+              class="rounded-md bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 transition-colors"
+            >
+              Sign in
+            </a>
+          </nav>
+          <script dangerouslySetInnerHTML={{__html: `
+            (function(){
+              try {
+                if (localStorage.getItem("pubkey")) {
+                  var btn = document.getElementById("auth-btn");
+                  btn.textContent = "Dashboard";
+                  btn.href = "/dashboard";
+                }
+              } catch(e) {}
+            })();
+          `}} />
+
           {/* Grid background */}
           <svg
             aria-hidden="true"
