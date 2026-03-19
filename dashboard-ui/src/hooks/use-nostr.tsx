@@ -36,14 +36,21 @@ export function NostrProvider({ children }: { children: ReactNode }) {
     const r = new RelayClient()
     relayRef.current = r
 
+    // Guard: only update state if this relay is still the active one.
+    // Prevents a stale relay's async onclose from resetting state after
+    // a new relay has already connected (e.g. React StrictMode double-mount).
     r.onAuth = () => {
-      setIsAuthenticated(true)
-      setRelay(r)
+      if (relayRef.current === r) {
+        setIsAuthenticated(true)
+        setRelay(r)
+      }
     }
 
     r.onClose = () => {
-      setIsAuthenticated(false)
-      setRelay(null)
+      if (relayRef.current === r) {
+        setIsAuthenticated(false)
+        setRelay(null)
+      }
     }
 
     r.connect()

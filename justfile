@@ -1,6 +1,40 @@
-# Fly.io commands for comet-server
+# comet-server commands
 
 app := "comet-server"
+
+# ── Development ──────────────────────────────────────────────────────────
+
+# Start dev server
+dev:
+    bun run dev
+
+# Run tests
+test:
+    bun test
+
+# Run tests in watch mode
+test-watch:
+    bun test --watch
+
+# Install all dependencies (server + admin + dashboard)
+install:
+    bun install
+    cd admin-ui && bun install
+    cd dashboard-ui && bun install
+
+# Generate Drizzle migration after schema changes
+db-generate:
+    bunx drizzle-kit generate
+
+# Push schema directly to dev database (no migration file)
+db-push:
+    bunx drizzle-kit push
+
+# Open Drizzle Studio
+db-studio:
+    bunx drizzle-kit studio
+
+# ── Fly.io ───────────────────────────────────────────────────────────────
 
 # Deploy to Fly
 deploy:
@@ -49,6 +83,8 @@ migrate:
 # Proxy to the remote database (localhost:15432)
 db-proxy:
     fly proxy 15432:5432 --app {{app}}
+
+# ── Build ────────────────────────────────────────────────────────────────
 
 # Build landing page CSS
 build-css:
